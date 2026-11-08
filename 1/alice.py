@@ -9,7 +9,7 @@ from crypto_math import (decrypt_message, dh_aes_key, dh_parameter_error,
 from wire import JsonChannel, PeerError, ProtocolError, expect, parameters, send_error
 
 
-def session(channel, protocol, message, local='Alice', peer='Bob'):
+def session(channel, protocol, message):
     channel.send({'opcode': 0, 'type': protocol})
     if protocol == 'RSAKey':
         reply = expect(channel.receive(), 0, 'RSAKey')
@@ -43,14 +43,14 @@ def session(channel, protocol, message, local='Alice', peer='Bob'):
 
     reply = expect(channel.receive(), 2, 'AES')
     plain = decrypt_message(key, reply.get('encryption'))
-    print(f'{peer} -> {local} (decrypted): {plain}', flush=True)
+    print(f'Bob -> Alice (decrypted): {plain}', flush=True)
     channel.send({'opcode': 2, 'type': 'AES',
                   'encryption': encrypt_message(key, message)})
     print(f'{protocol} exchange: PASS', flush=True)
 
 
 def run(addr, port, protocol='RSA', message='Hello from Alice', timeout=30.0,
-        transcript=None, serve=False):
+        transcript=None):
     if timeout <= 0:
         raise ValueError('timeout must be positive')
     with socket.create_connection((addr, port), timeout=timeout) as conn:
@@ -58,11 +58,7 @@ def run(addr, port, protocol='RSA', message='Hello from Alice', timeout=30.0,
         channel = JsonChannel(conn, transcript)
         logging.info('Alice is connected to %s:%s', addr, port)
         try:
-            if serve:
-                from bob import session as responder_session
-                responder_session(channel, message, local='Alice', peer='Bob')
-            else:
-                session(channel, protocol, message)
+            session(channel, protocol, message)
         except PeerError:
             raise
         except (ValueError, KeyError, TypeError) as exc:
@@ -81,8 +77,6 @@ def command_line_args():
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
     parser.add_argument('--timeout', type=float, default=30.0)
     parser.add_argument('--transcript', help='Save exchanged JSON, one session per file')
-    parser.add_argument('--serve', action='store_true',
-                        help='Optional reversed role: connect, then answer a request from Bob')
     return parser.parse_args()
 
 
@@ -90,7 +84,7 @@ def main():
     args = command_line_args()
     logging.basicConfig(level=args.log, format='%(levelname)s: %(message)s')
     try:
-        run(args.addr, args.port, args.protocol, args.message, args.timeout, args.transcript, args.serve)
+        run(args.addr, args.port, args.protocol, args.message, args.timeout, args.transcript)
     except (OSError, ValueError, TypeError) as exc:
         logging.error('Alice: %s', exc)
         return 1
